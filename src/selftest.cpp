@@ -455,6 +455,42 @@ int runSelfTest(MainWindow *window)
               && saved.contains(QLatin1String("play-pause = K")),
           QStringLiteral("shortcuts.conf keeps the edited binding and the original play-pause key"));
 
+    const QString resumeFile = mediaDir + QStringLiteral("/resume.mp4");
+    QString resumeOutput;
+    check(runProcess(QStringLiteral("ffmpeg"),
+                     {QStringLiteral("-y"), QStringLiteral("-hide_banner"), QStringLiteral("-loglevel"),
+                      QStringLiteral("error"), QStringLiteral("-f"), QStringLiteral("lavfi"),
+                      QStringLiteral("-i"), QStringLiteral("testsrc2=size=320x180:rate=24:duration=15"),
+                      QStringLiteral("-c:v"), QStringLiteral("libx264"), QStringLiteral("-pix_fmt"),
+                      QStringLiteral("yuv420p"), QStringLiteral("-preset"), QStringLiteral("veryfast"),
+                      QStringLiteral("-an"), resumeFile},
+                     &resumeOutput, 30000),
+          QStringLiteral("ffmpeg created a longer clip for resume"));
+    player->setResumeEnabled(true);
+    player->setPaused(false);
+    window->openPaths({resumeFile}, false);
+    check(waitUntil([player] { return player->duration() > 10.0 && player->path().contains(QStringLiteral("resume.mp4")); }, 8000),
+          QStringLiteral("resume clip is open (dur=%1 path=%2)")
+              .arg(player->duration())
+              .arg(player->path()));
+    player->setPaused(true);
+    player->seekAbsolute(8.0);
+    check(waitUntil([player] { return std::abs(player->position() - 8.0) < 0.8; }, 3000),
+          QStringLiteral("resume clip seeks to 8s (pos=%1)").arg(player->position()));
+    window->openPaths({second}, false);
+    check(waitUntil([player] { return player->path().contains(QStringLiteral("b.mp4")); }, 4000),
+          QStringLiteral("leaving the resume clip stores its position"));
+    window->openPaths({resumeFile}, false);
+    auto *osd = window->findChild<QLabel *>(QStringLiteral("osdLabel"));
+    const bool resumed = waitUntil([player, osd] {
+        return std::abs(player->position() - 8.0) < 1.5 && osd && osd->isVisible()
+               && osd->text().contains(QStringLiteral("继续"));
+    }, 5000);
+    check(resumed, QStringLiteral("reopening the clip resumes near 8s (pos=%1 osd=%2)")
+                       .arg(player->position())
+                       .arg(osd ? osd->text() : QString()));
+    player->setResumeEnabled(false);
+
     window->openUrl(QUrl::fromLocalFile(first).toString());
     check(waitUntil([player] { return player->path().contains(QStringLiteral("a.mp4")); }, 4000),
           QStringLiteral("open URL accepts a file:// media address"));

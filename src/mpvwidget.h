@@ -47,6 +47,10 @@ public:
     QVector<PlaylistItem> playlist() const { return playlist_; }
     QVector<MediaTrack> tracks() const;
 
+    void setResumeEnabled(bool enabled);
+    bool resumeEnabled() const { return resumeEnabled_; }
+    // Remember this file with mpv watch-later, or forget it when it is finished.
+    void leaveCurrentFile();
     void openReplace(const QStringList &paths);
     void openAppend(const QStringList &paths);
     void playIndex(int index);
@@ -135,6 +139,7 @@ private:
     double speed_ = 1;
     bool pausedForCache_ = false;
     bool drainingEvents_ = false;
+    bool resumeEnabled_ = false;
     QVector<PlaylistItem> playlist_;
 
 };

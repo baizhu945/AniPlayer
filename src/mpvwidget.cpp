@@ -1,11 +1,13 @@
 #include "mpvwidget.h"
 
 #include "i18n.h"
+#include "shortcuts.h"
 
 #include <locale.h>
 
 #include <mpv/render.h>
 
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QMouseEvent>
@@ -134,6 +136,15 @@ MpvWidget::MpvWidget(QWidget *parent)
     opt("hr-seek", "yes");
     opt("screenshot-format", "png");
     opt("msg-level", "all=warn");
+    // Same mechanism as mpv --save-position-on-quit. Only the start position is
+    // stored, under AniPlayer's config directory rather than mpv's own.
+    const QString watchDir = ShortcutStore::directory() + QStringLiteral("/watch_later");
+    QDir().mkpath(watchDir);
+    const QByteArray watchDirUtf8 = watchDir.toUtf8();
+    opt("watch-later-dir", watchDirUtf8.constData());
+    opt("watch-later-options", "start");
+    opt("save-position-on-quit", "no");
+    opt("resume-playback", "no");
 
     mpv_set_wakeup_callback(mpv_, &MpvWidget::onWakeup, this);
     const int rc = mpv_initialize(mpv_);
@@ -487,14 +498,40 @@ bool MpvWidget::setPropertyFlag(const char *name, bool value)
     return mpv_set_property(mpv_, name, MPV_FORMAT_FLAG, &flag) >= 0;
 }
 
+void MpvWidget::setResumeEnabled(bool enabled)
+{
+    resumeEnabled_ = enabled;
+    setPropertyFlag("save-position-on-quit", enabled);
+    setPropertyFlag("resume-playback", enabled);
+}
+
+void MpvWidget::leaveCurrentFile()
+{
+    if (!mpv_ || !resumeEnabled_ || path_.isEmpty())
+        return;
+    // A few seconds in is not worth a seek. A file left at the end should
+    // start over, which is what most local players do.
+    const bool keep = position_ >= 3.0 && (duration_ <= 0.0 || duration_ - position_ >= 5.0);
+    if (keep) {
+        command({QByteArrayLiteral("write-watch-later-config")});
+        return;
+    }
+    setPropertyFlag("save-position-on-quit", false);
+    command({QByteArrayLiteral("delete-watch-later-config")});
+}
+
 void MpvWidget::openReplace(const QStringList &paths)
 {
     if (paths.isEmpty())
         return;
+    // Drop the flag before loadfile so a finished file is not written again.
+    leaveCurrentFile();
     QByteArray first = paths.first().toUtf8();
     command({QByteArrayLiteral("loadfile"), first, QByteArrayLiteral("replace")});
     for (int i = 1; i < paths.size(); ++i)
         command({QByteArrayLiteral("loadfile"), paths.at(i).toUtf8(), QByteArrayLiteral("append")});
+    if (resumeEnabled_)
+        setPropertyFlag("save-position-on-quit", true);
 }
 
 void MpvWidget::openAppend(const QStringList &paths)
@@ -509,17 +546,26 @@ void MpvWidget::openAppend(const QStringList &paths)
 
 void MpvWidget::playIndex(int index)
 {
+    leaveCurrentFile();
     command({QByteArrayLiteral("playlist-play-index"), QByteArray::number(index)});
+    if (resumeEnabled_)
+        setPropertyFlag("save-position-on-quit", true);
 }
 
 void MpvWidget::playNext()
 {
+    leaveCurrentFile();
     command({QByteArrayLiteral("playlist-next"), QByteArrayLiteral("force")});
+    if (resumeEnabled_)
+        setPropertyFlag("save-position-on-quit", true);
 }
 
 void MpvWidget::playPrevious()
 {
+    leaveCurrentFile();
     command({QByteArrayLiteral("playlist-prev"), QByteArrayLiteral("force")});
+    if (resumeEnabled_)
+        setPropertyFlag("save-position-on-quit", true);
 }
 
 void MpvWidget::removePlaylistIndex(int index)
@@ -530,7 +576,10 @@ void MpvWidget::removePlaylistIndex(int index)
 
 void MpvWidget::clearPlaylist()
 {
+    leaveCurrentFile();
     command({QByteArrayLiteral("stop")});
+    if (resumeEnabled_)
+        setPropertyFlag("save-position-on-quit", true);
     command({QByteArrayLiteral("playlist-clear")});
     path_.clear();
     mediaTitle_.clear();

@@ -558,6 +558,8 @@ void MainWindow::buildUi()
         updateEmptyState();
         updateTrackMenus();
         updatePlaylistWidget();
+        // path and time-pos can arrive after FILE_LOADED in the same drain.
+        QTimer::singleShot(0, this, [this] { armResumeOsd(); });
     });
     connect(player_, &MpvWidget::fileEnded, this, [this] { showOsd(ui("播放结束", "Playback finished")); });
     connect(player_, &MpvWidget::playbackError, this, [this](const QString &message) { showOsd(message); });
@@ -955,6 +957,8 @@ void MainWindow::loadSettings()
     player_->setHwdecEnabled(settings.value(QStringLiteral("hwdec"), true).toBool());
     hwdecAction_->setChecked(settings.value(QStringLiteral("hwdec"), true).toBool());
     player_->setLoopMode(settings.value(QStringLiteral("loop"), QStringLiteral("off")).toString());
+    resumePlayback_ = !testMode_ && settings.value(QStringLiteral("resumePlayback"), true).toBool();
+    player_->setResumeEnabled(resumePlayback_);
     const auto mode = static_cast<SuperResolution>(settings.value(QStringLiteral("superResolution"), 1).toInt());
     applyingSettings_ = true;
     setSuperResolution(mode == SuperResolution::Efficiency || mode == SuperResolution::Quality
@@ -983,6 +987,7 @@ void MainWindow::saveSettings()
     settings.setValue(QStringLiteral("superResolution"), static_cast<int>(player_->superResolution()));
     settings.setValue(QStringLiteral("lastDirectory"), lastDirectory_);
     settings.setValue(QStringLiteral("warnedQuality"), warnedQuality_);
+    settings.setValue(QStringLiteral("resumePlayback"), resumePlayback_);
     settings.setValue(QStringLiteral("language"),
                       I18n::instance().language() == I18n::Language::English ? QStringLiteral("en")
                                                                             : QStringLiteral("zh"));
@@ -990,6 +995,7 @@ void MainWindow::saveSettings()
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
+    player_->leaveCurrentFile();
     saveSettings();
     QMainWindow::closeEvent(event);
 }
@@ -1152,17 +1158,22 @@ void MainWindow::showSettings()
     }
     auto *hw = new QCheckBox(&dialog);
     hw->setChecked(hwdecAction_->isChecked());
+    auto *resume = new QCheckBox(&dialog);
+    resume->setObjectName(QStringLiteral("settingsResume"));
+    resume->setChecked(resumePlayback_);
     auto *note = new QLabel(&dialog);
     note->setWordWrap(true);
     auto *languageCaption = new QLabel(&dialog);
     auto *srCaption = new QLabel(&dialog);
     auto *close = new QPushButton(&dialog);
-    auto applySettingsText = [languageCaption, srCaption, hw, note, close, &dialog] {
+    auto applySettingsText = [languageCaption, srCaption, hw, resume, note, close, &dialog] {
         dialog.setWindowTitle(ui("设置", "Settings"));
         languageCaption->setText(ui("语言", "Language"));
         srCaption->setText(ui("超分辨率", "Super Resolution"));
         hw->setText(ui("硬件解码（auto-copy，着色器可用）",
                        "Hardware decoding (auto-copy, required for shaders)"));
+        resume->setText(ui("记住播放位置，下次从退出的地方继续",
+                           "Resume playback from where you left off"));
         note->setText(ui("超分辨率使用与 Kazumi 相同的 Anime4K 着色器链，在 mpv 的 OpenGL 视频输出里逐帧运行。"
                          "质量档更重。媒体信息由 ffprobe 读取。语言会立即切换。",
                          "Super resolution uses the same Anime4K shader chains as Kazumi and runs on "
@@ -1178,6 +1189,7 @@ void MainWindow::showSettings()
     layout->addRow(languageCaption, languageBox);
     layout->addRow(srCaption, sr);
     layout->addRow(QString(), hw);
+    layout->addRow(QString(), resume);
     layout->addRow(note);
     auto *buttons = new QHBoxLayout;
     buttons->addStretch(1);
@@ -1192,6 +1204,10 @@ void MainWindow::showSettings()
         setSuperResolution(static_cast<SuperResolution>(sr->itemData(index).toInt()));
     });
     connect(hw, &QCheckBox::toggled, hwdecAction_, &QAction::setChecked);
+    connect(resume, &QCheckBox::toggled, this, [this](bool checked) {
+        resumePlayback_ = checked;
+        player_->setResumeEnabled(checked);
+    });
     connect(close, &QPushButton::clicked, &dialog, &QDialog::accept);
     dialog.exec();
 }
@@ -1480,6 +1496,41 @@ void MainWindow::updateEmptyState()
     const bool empty = player_->path().isEmpty();
     emptyState_->setVisible(empty);
     layoutOverlays();
+}
+
+void MainWindow::armResumeOsd()
+{
+    if (resumeOsdTimer_)
+        resumeOsdTimer_->stop();
+    if (!player_->resumeEnabled() || player_->path().isEmpty())
+        return;
+    const auto consider = [this] {
+        if (!player_->resumeEnabled() || player_->path().isEmpty())
+            return true;
+        const double position = player_->position();
+        const double duration = player_->duration();
+        if (position >= 0.15 && position < 3.0)
+            return true;
+        if (position >= 3.0 && (duration <= 0.0 || duration - position >= 5.0)) {
+            showOsd(ui("从 %1 继续", "Resumed at %1").arg(formatTime(position)));
+            return true;
+        }
+        return false;
+    };
+    if (consider())
+        return;
+    if (!resumeOsdTimer_)
+        resumeOsdTimer_ = new QTimer(this);
+    resumeOsdTimer_->setInterval(100);
+    resumeOsdTimer_->setProperty("ticks", 0);
+    resumeOsdTimer_->disconnect();
+    connect(resumeOsdTimer_, &QTimer::timeout, this, [this, consider] {
+        const int ticks = resumeOsdTimer_->property("ticks").toInt() + 1;
+        resumeOsdTimer_->setProperty("ticks", ticks);
+        if (consider() || ticks >= 20)
+            resumeOsdTimer_->stop();
+    });
+    resumeOsdTimer_->start();
 }
 
 void MainWindow::showOsd(const QString &text)

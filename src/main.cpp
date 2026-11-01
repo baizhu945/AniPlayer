@@ -23,13 +23,15 @@ void printHelp()
         "\n"
         "AniPlayer 使用 libmpv 播放，Anime4K 超分辨率与 Kazumi 的效率档、质量档一致。\n"
         "媒体信息来自 ffprobe。播放、倍速、循环、音轨、字幕和超分辨率在底部控制条，右键画面也能打开。\n"
-        "语言在顶部切换。快捷键保存在 ~/.config/AniPlayer/shortcuts.conf，也可在菜单「快捷键」里修改。\n",
+        "语言在顶部切换。再次打开同一个视频时，默认从上次退出的位置继续。\n"
+        "快捷键保存在 ~/.config/AniPlayer/shortcuts.conf，也可在菜单「快捷键」里修改。\n",
         "Usage: aniplayer [files...]\n"
         "       aniplayer --test\n"
         "\n"
         "AniPlayer plays with libmpv. Anime4K efficiency and quality presets match Kazumi.\n"
         "Media details come from ffprobe. Playback, speed, loop, audio, subtitles, and super resolution\n"
         "are on the bottom bar and in the right-click menu. Switch language with the header button.\n"
+        "Opening a video again resumes from where you left it.\n"
         "Shortcuts are stored in ~/.config/AniPlayer/shortcuts.conf and can be edited from the Shortcuts menu.\n");
     fprintf(stdout, "%s", text.toUtf8().constData());
 }

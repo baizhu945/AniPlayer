@@ -62,6 +62,7 @@ private:
     void updateModeButtons();
     void updateEmptyState();
     void showOsd(const QString &text);
+    void armResumeOsd();
     void flash(QWidget *widget);
     void markActive(QWidget *widget, bool active);
     QString loopLabel() const;
@@ -107,6 +108,7 @@ private:
     QAction *hwdecAction_ = nullptr;
     QTimer *hideTimer_ = nullptr;
     QTimer *osdTimer_ = nullptr;
+    QTimer *resumeOsdTimer_ = nullptr;
     bool seeking_ = false;
     bool chromeAutohide_ = true;
     bool playlistVisible_ = false;
@@ -115,5 +117,6 @@ private:
     QString lastDirectory_;
     QString titleText_;
     bool warnedQuality_ = false;
+    bool resumePlayback_ = true;
     MediaInfoDialog *mediaInfo_ = nullptr;
 };
