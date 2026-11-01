@@ -1,0 +1,8 @@
+build/
+*.user
+.qmake.stash
+test-output/
+result
+result-*
+dist/
+*.AppImage

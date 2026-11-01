@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=AniPlayer
+GenericName=Anime Player
+GenericName[zh_CN]=动漫播放器
+Comment=Local anime player with Anime4K super resolution
+Comment[zh_CN]=支持 Anime4K 超分辨率的本地动漫播放器
+Exec=aniplayer %F
+Icon=aniplayer
+Terminal=false
+Categories=AudioVideo;Video;Player;
+MimeType=application/ogg;audio/mp4;audio/x-matroska;video/mp4;video/ogg;video/webm;video/x-matroska;video/x-msvideo;
+Keywords=anime;mpv;Anime4K;
+StartupWMClass=aniplayer
+X-AppImage-Version=0.1.0
